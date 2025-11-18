@@ -48,6 +48,46 @@ services:
       - backend
     restart: unless-stopped
 
+  statistics-service:
+    build:
+      context: ./microservices/statistics-service
+      dockerfile: Dockerfile
+    container_name: coderacer-statistics
+    environment:
+      PORT: 3002
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: coderacer
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      NODE_ENV: production
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./microservices/notification-service
+      dockerfile: Dockerfile
+    container_name: coderacer-notifications
+    environment:
+      PORT: 3003
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: coderacer
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      NODE_ENV: production
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
 

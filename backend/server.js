@@ -1,10 +1,15 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// URLs микросервисов
+const STATISTICS_SERVICE_URL = process.env.STATISTICS_SERVICE_URL || 'http://statistics-service:3002';
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3003';
 
 // Middleware
 app.use(cors());
@@ -72,6 +77,43 @@ app.post('/api/result', async (req, res) => {
        RETURNING *`,
       [userId || null, snippetId, wpm, accuracy, time || null]
     );
+    
+    // Получаем информацию о фрагменте кода для микросервисов
+    const snippetResult = await pool.query('SELECT language FROM code_snippets WHERE id = $1', [snippetId]);
+    const language = snippetResult.rows[0]?.language || 'unknown';
+    
+    // Получаем количество гонок пользователя
+    const userRacesResult = await pool.query(
+      'SELECT COUNT(*) as total FROM race_results WHERE user_id = $1',
+      [userId]
+    );
+    const totalRaces = parseInt(userRacesResult.rows[0]?.total || 0);
+    
+    // Асинхронно вызываем микросервисы (не блокируем ответ)
+    Promise.all([
+      // Вызываем сервис статистики для анализа
+      axios.post(`${STATISTICS_SERVICE_URL}/api/statistics/analyze`, {
+        userId,
+        snippetId,
+        wpm,
+        accuracy
+      }).catch(err => console.error('Statistics service error:', err.message)),
+      
+      // Проверяем достижения через сервис уведомлений
+      axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/check-achievements`, {
+        userId,
+        wpm,
+        accuracy,
+        totalRaces
+      }).catch(err => console.error('Notification service error:', err.message)),
+      
+      // Проверяем рекорды
+      axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/check-records`, {
+        userId,
+        wpm,
+        language
+      }).catch(err => console.error('Notification service error:', err.message))
+    ]).catch(err => console.error('Microservices call error:', err));
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
